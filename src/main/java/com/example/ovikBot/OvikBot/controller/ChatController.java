@@ -1,29 +1,25 @@
 package com.example.ovikBot.OvikBot.controller;
 
-
 import com.example.ovikBot.OvikBot.dto.ChatRequest;
 import com.example.ovikBot.OvikBot.dto.ChatResponse;
 import com.example.ovikBot.OvikBot.service.ChatService;
 import com.example.ovikBot.OvikBot.service.UploadService;
 import lombok.RequiredArgsConstructor;
-//import org.springframework.stereotype.Controller;
-//import okhttp3.MediaType;
-//import org.springframework.web.bind.annotation.GetMapping;
-//import org.springframework.web.bind.annotation.PostMapping;
-//import org.springframework.web.bind.annotation.RestController;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
-
-import java.io.File;
 
 @RestController
 @RequestMapping("/chat")
 @RequiredArgsConstructor
+@Slf4j
 public class ChatController {
-
 
     private final ChatService chatService;
     private final UploadService uploadService;
@@ -35,23 +31,25 @@ public class ChatController {
 
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> stream(
-            @RequestParam String message
-    ) {
-        return chatService.stream(message);
+            @RequestParam String message,
+            Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login required");
+        }
+        log.info("Received request to stream message: {}", message);
+        return chatService.stream(message)
+                .onErrorResume(err -> Flux.just(
+                        "event: error\ndata: " + err.getMessage().replace("\n", " ") + "\n\n"));
     }
 
-    @PostMapping("/upload")
-    ResponseEntity<String> upload(
-            @RequestParam("file") MultipartFile file
-    ) {
+    @PostMapping("/rag/upload")
+    public ResponseEntity<String> uploadRagPdf(@RequestParam("file") MultipartFile file) {
         uploadService.upload(file);
-        return ResponseEntity.ok("File uploaded successfully.");
+        return ResponseEntity.ok("PDF uploaded and indexed successfully.");
     }
 
-    @PostMapping("/ask")
-    ResponseEntity<String> ask(@RequestBody ChatRequest request) {
-        String ans = chatService.askFromRag(request);
-        return ResponseEntity.ok(ans);
+    @PostMapping("/rag/ask")
+    public ChatResponse askFromRag(@RequestBody ChatRequest request) {
+        return chatService.askFromRag(request.getMessage());
     }
-
 }
